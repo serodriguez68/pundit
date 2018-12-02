@@ -46,7 +46,7 @@ class PostPolicy < Struct.new(:user, :post)
 
   def permitted_attributes
     if post.user == user
-      [:title, :votes]
+      %i[title votes]
     else
       [:votes]
     end
@@ -60,6 +60,10 @@ end
 class Post < Struct.new(:user)
   def self.published
     :published
+  end
+
+  def self.read
+    :read
   end
 
   def to_s
@@ -77,17 +81,44 @@ module Customer
       OpenStruct.new(param_key: "customer_post")
     end
 
-    def policy_class
+    def self.policy_class
       PostPolicy
     end
+
+    def policy_class
+      self.class.policy_class
+    end
+  end
+end
+
+class CommentScope
+  attr_reader :original_object
+  def initialize(original_object)
+    @original_object = original_object
+  end
+
+  def ==(other)
+    original_object == other.original_object
   end
 end
 
 class CommentPolicy < Struct.new(:user, :comment)
   class Scope < Struct.new(:user, :scope)
     def resolve
-      scope
+      CommentScope.new(scope)
     end
+  end
+end
+
+class PublicationPolicy < Struct.new(:user, :publication)
+  class Scope < Struct.new(:user, :scope)
+    def resolve
+      scope.published
+    end
+  end
+
+  def create?
+    true
   end
 end
 
@@ -140,9 +171,23 @@ end
 class CriteriaPolicy < Struct.new(:user, :criteria); end
 
 module Project
-  class CommentPolicy < Struct.new(:user, :post); end
+  class CommentPolicy < Struct.new(:user, :comment)
+    class Scope < Struct.new(:user, :scope)
+      def resolve
+        scope
+      end
+    end
+  end
+
   class CriteriaPolicy < Struct.new(:user, :criteria); end
-  class PostPolicy < Struct.new(:user, :post); end
+
+  class PostPolicy < Struct.new(:user, :post)
+    class Scope < Struct.new(:user, :scope)
+      def resolve
+        scope.read
+      end
+    end
+  end
 end
 
 class DenierPolicy < Struct.new(:user, :record)
@@ -154,25 +199,52 @@ end
 class Controller
   include Pundit
   # Mark protected methods public so they may be called in test
+  # rubocop:disable Layout/AccessModifierIndentation, Style/AccessModifierDeclarations
   public(*Pundit.protected_instance_methods)
+  # rubocop:enable Layout/AccessModifierIndentation, Style/AccessModifierDeclarations
 
-  attr_reader :current_user, :params
+  attr_reader :current_user, :action_name, :params
 
-  def initialize(current_user, params)
+  def initialize(current_user, action_name, params)
     @current_user = current_user
+    @action_name = action_name
     @params = params
   end
 end
 
-class NilClassPolicy
+class NilClassPolicy < Struct.new(:user, :record)
   class Scope
     def initialize(*)
-      raise "I'm only here to be annoying!"
+      raise Pundit::NotDefinedError, "Cannot scope NilClass"
     end
   end
 
-  def initialize(*)
-    raise "I'm only here to be annoying!"
+  def show?
+    false
+  end
+
+  def destroy?
+    false
+  end
+end
+
+class Wiki; end
+class WikiPolicy
+  class Scope
+    # deliberate typo method
+    def initalize; end
+  end
+end
+
+class Thread
+  def self.all; end
+end
+class ThreadPolicy < Struct.new(:user, :thread)
+  class Scope < Struct.new(:user, :scope)
+    def resolve
+      # deliberate wrong useage of the method
+      scope.all(:unvalid, :parameters)
+    end
   end
 end
 

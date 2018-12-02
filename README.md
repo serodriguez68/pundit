@@ -1,8 +1,8 @@
 # Pundit
 
-[![Build Status](https://secure.travis-ci.org/elabs/pundit.svg?branch=master)](https://travis-ci.org/elabs/pundit)
-[![Code Climate](https://codeclimate.com/github/elabs/pundit.svg)](https://codeclimate.com/github/elabs/pundit)
-[![Inline docs](http://inch-ci.org/github/elabs/pundit.svg?branch=master)](http://inch-ci.org/github/elabs/pundit)
+[![Build Status](https://secure.travis-ci.org/varvet/pundit.svg?branch=master)](https://travis-ci.org/varvet/pundit)
+[![Code Climate](https://codeclimate.com/github/varvet/pundit.svg)](https://codeclimate.com/github/varvet/pundit)
+[![Inline docs](http://inch-ci.org/github/varvet/pundit.svg?branch=master)](http://inch-ci.org/github/varvet/pundit)
 [![Gem Version](https://badge.fury.io/rb/pundit.svg)](http://badge.fury.io/rb/pundit)
 
 Pundit provides a set of helpers which guide you in leveraging regular Ruby
@@ -12,13 +12,13 @@ scaleable authorization system.
 Links:
 
 - [API documentation](http://www.rubydoc.info/gems/pundit)
-- [Source Code](https://github.com/elabs/pundit)
-- [Contributing](https://github.com/elabs/pundit/blob/master/CONTRIBUTING.md)
-- [Code of Conduct](https://github.com/elabs/pundit/blob/master/CODE_OF_CONDUCT.md)
+- [Source Code](https://github.com/varvet/pundit)
+- [Contributing](https://github.com/varvet/pundit/blob/master/CONTRIBUTING.md)
+- [Code of Conduct](https://github.com/varvet/pundit/blob/master/CODE_OF_CONDUCT.md)
 
 Sponsored by:
 
-[<img src="http://d3cv91luii1z1d.cloudfront.net/logo-gh.png" alt="Elabs" height="50px"/>](http://elabs.se)
+[<img src="https://www.varvet.com/images/wordmark-red.svg" alt="Varvet" height="50px"/>](https://www.varvet.com)
 
 ## Installation
 
@@ -133,6 +133,18 @@ def publish
 end
 ```
 
+You can pass an argument to override the policy class if necessary. For example:
+
+```ruby
+def create
+  @publication = find_publication # assume this method returns any model that behaves like a publication
+  # @publication.class => Post
+  authorize @publication, policy_class: PublicationPolicy
+  @publication.publish!
+  redirect_to @publication
+end
+```
+
 If you don't have an instance for the first argument to `authorize`, then you can pass
 the class. For example:
 
@@ -221,7 +233,7 @@ class PostPolicy < ApplicationPolicy
   end
 
   def update?
-    user.admin? or not post.published?
+    user.admin? or not record.published?
   end
 end
 ```
@@ -254,7 +266,7 @@ class PostPolicy < ApplicationPolicy
   end
 
   def update?
-    user.admin? or not post.published?
+    user.admin? or not record.published?
   end
 end
 ```
@@ -264,6 +276,19 @@ You can now use this class from your controller via the `policy_scope` method:
 ``` ruby
 def index
   @posts = policy_scope(Post)
+end
+
+def show
+  @post = policy_scope(Post).find(params[:id])
+end
+```
+
+Like with the authorize method, you can also override the policy scope class:
+
+``` ruby
+def index
+  # publication_class => Post
+  @publications = policy_scope(publication_class, policy_scope_class: PublicationPolicy::Scope)
 end
 ```
 
@@ -293,8 +318,8 @@ you to add the `authorize` call manually to each controller action, it's really
 easy to miss one.
 
 Thankfully, Pundit has a handy feature which reminds you in case you forget.
-Pundit tracks whether you have called `authorize` anywhere in you controller
-action. Pundit also adds a method to you controllers called
+Pundit tracks whether you have called `authorize` anywhere in your controller
+action. Pundit also adds a method to your controllers called
 `verify_authorized`. This method will raise an exception if `authorize` has not
 yet been called. You should run this method in an `after_action` hook to ensure
 that you haven't forgotten to authorize the action. For example:
@@ -389,7 +414,8 @@ rails g pundit:policy post
 
 In many applications, only logged in users are really able to do anything. If
 you're building such a system, it can be kind of cumbersome to check that the
-user in a policy isn't `nil` for every single permission.
+user in a policy isn't `nil` for every single permission. Aside from policies,
+you can add this check to the base class for scopes.
 
 We suggest that you define a filter that redirects unauthenticated users to the
 login page. As a secondary defence, if you've defined an ApplicationPolicy, it
@@ -402,6 +428,37 @@ class ApplicationPolicy
     raise Pundit::NotAuthorizedError, "must be logged in" unless user
     @user   = user
     @record = record
+  end
+
+  class Scope
+    attr_reader :user, :scope
+
+    def initialize(user, scope)
+      raise Pundit::NotAuthorizedError, "must be logged in" unless user
+      @user = user
+      @scope = scope
+    end
+  end
+end
+```
+
+## NilClassPolicy
+
+To support a [null object pattern](https://en.wikipedia.org/wiki/Null_Object_pattern)
+you may find that you want to implement a `NilClassPolicy`. This might be useful
+where you want to extend your ApplicationPolicy to allow some tolerance of, for
+example, associations which might be `nil`.
+
+```ruby
+class NilClassPolicy < ApplicationPolicy
+  class Scope < Scope
+    def resolve
+      raise Pundit::NotDefinedError, "Cannot scope NilClass"
+    end
+  end
+
+  def show?
+    false # Nobody can see nothing
   end
 end
 ```
@@ -497,6 +554,48 @@ define a method in your controller called `pundit_user`.
 ```ruby
 def pundit_user
   User.find_by_other_means
+end
+```
+
+## Policy Namespacing
+In some cases it might be helpful to have multiple policies that serve different contexts for a
+resource. A prime example of this is the case where User policies differ from Admin policies. To
+authorize with a namespaced policy, pass the namespace into the `authorize` helper in an array:
+
+```ruby
+authorize(post)                   # => will look for a PostPolicy
+authorize([:admin, post])         # => will look for an Admin::PostPolicy
+authorize([:foo, :bar, post])     # => will look for a Foo::Bar::PostPolicy
+
+policy_scope(Post)                # => will look for a PostPolicy::Scope
+policy_scope([:admin, Post])      # => will look for an Admin::PostPolicy::Scope
+policy_scope([:foo, :bar, Post])  # => will look for a Foo::Bar::PostPolicy::Scope
+```
+
+If you are using namespaced policies for something like Admin views, it can be useful to
+override the `policy_scope` and `authorize` helpers in your `AdminController` to automatically
+apply the namespacing:
+
+```ruby
+class AdminController < ApplicationController
+  def policy_scope(scope)
+    super([:admin, scope])
+  end
+
+  def authorize(record, query = nil)
+    super([:admin, record], query)
+  end
+end
+
+class Admin::PostController < AdminController
+  def index
+    policy_scope(Post)
+  end
+
+  def show
+    post = Post.find(params[:id])
+    authorize(post)
+  end
 end
 ```
 
@@ -612,6 +711,28 @@ end
 
 If you have defined an action-specific method on your policy for the current action, the `permitted_attributes` helper will call it instead of calling `permitted_attributes` on your controller.
 
+If you need to fetch parameters based on namespaces different from the suggested one, override the below method, in your controller, and return an instance of `ActionController::Parameters`.
+
+```ruby
+def pundit_params_for(record)
+  params.require(PolicyFinder.new(record).param_key)
+end
+```
+
+For example:
+
+```ruby
+# If you don't want to use require
+def pundit_params_for(record)
+  params.fetch(PolicyFinder.new(record).param_key, {})
+end
+
+# If you are using something like the JSON API spec
+def pundit_params_for(_record)
+  params.fetch(:data, {}).fetch(:attributes, {})
+end
+```
+
 ## RSpec
 
 ### Policy Specs
@@ -648,12 +769,16 @@ end
 An alternative approach to Pundit policy specs is scoping them to a user context as outlined in this
 [excellent post](http://thunderboltlabs.com/blog/2013/03/27/testing-pundit-policies-with-rspec/) and implemented in the third party [pundit-matchers](https://github.com/chrisalley/pundit-matchers) gem.
 
+### Scope Specs
+
+Pundit does not provide a DSL for testing scopes. Just test it like a regular Ruby class!
+
 # External Resources
 
 - [RailsApps Example Application: Pundit and Devise](https://github.com/RailsApps/rails-devise-pundit)
 - [Migrating to Pundit from CanCan](http://blog.carbonfive.com/2013/10/21/migrating-to-pundit-from-cancan/)
 - [Testing Pundit Policies with RSpec](http://thunderboltlabs.com/blog/2013/03/27/testing-pundit-policies-with-rspec/)
-- [Using Pundit outside of a Rails controller](https://github.com/elabs/pundit/pull/136)
+- [Using Pundit outside of a Rails controller](https://github.com/varvet/pundit/pull/136)
 - [Straightforward Rails Authorization with Pundit](http://www.sitepoint.com/straightforward-rails-authorization-with-pundit/)
 
 # License

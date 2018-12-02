@@ -17,75 +17,69 @@ module Pundit
     end
 
     # @return [nil, Scope{#resolve}] scope class which can resolve to a scope
-    # @see https://github.com/elabs/pundit#scopes
+    # @see https://github.com/varvet/pundit#scopes
     # @example
     #   scope = finder.scope #=> UserPolicy::Scope
     #   scope.resolve #=> <#ActiveRecord::Relation ...>
     #
     def scope
-      policy::Scope if policy
-    rescue NameError
-      nil
+      "#{policy}::Scope".safe_constantize
     end
 
     # @return [nil, Class] policy class with query methods
-    # @see https://github.com/elabs/pundit#policies
+    # @see https://github.com/varvet/pundit#policies
     # @example
     #   policy = finder.policy #=> UserPolicy
     #   policy.show? #=> true
     #   policy.update? #=> false
     #
     def policy
-      klass = find
-      klass = klass.constantize if klass.is_a?(String)
-      klass
-    rescue NameError
-      nil
+      klass = find(object)
+      klass.is_a?(String) ? klass.safe_constantize : klass
     end
 
     # @return [Scope{#resolve}] scope class which can resolve to a scope
     # @raise [NotDefinedError] if scope could not be determined
     #
     def scope!
-      raise NotDefinedError, "unable to find policy scope of nil" if object.nil?
-      scope or raise NotDefinedError, "unable to find scope `#{find}::Scope` for `#{object.inspect}`"
+      scope or raise NotDefinedError, "unable to find scope `#{find(object)}::Scope` for `#{object.inspect}`"
     end
 
     # @return [Class] policy class with query methods
     # @raise [NotDefinedError] if policy could not be determined
     #
     def policy!
-      raise NotDefinedError, "unable to find policy of nil" if object.nil?
-      policy or raise NotDefinedError, "unable to find policy `#{find}` for `#{object.inspect}`"
+      policy or raise NotDefinedError, "unable to find policy `#{find(object)}` for `#{object.inspect}`"
     end
 
     # @return [String] the name of the key this object would have in a params hash
     #
     def param_key
-      if object.respond_to?(:model_name)
-        object.model_name.param_key.to_s
-      elsif object.is_a?(Class)
-        object.to_s.demodulize.underscore
+      model = object.is_a?(Array) ? object.last : object
+
+      if model.respond_to?(:model_name)
+        model.model_name.param_key.to_s
+      elsif model.is_a?(Class)
+        model.to_s.demodulize.underscore
       else
-        object.class.to_s.demodulize.underscore
+        model.class.to_s.demodulize.underscore
       end
     end
 
   private
 
-    def find
-      if object.nil?
-        nil
-      elsif object.respond_to?(:policy_class)
-        object.policy_class
-      elsif object.class.respond_to?(:policy_class)
-        object.class.policy_class
+    def find(subject)
+      if subject.is_a?(Array)
+        modules = subject.dup
+        last = modules.pop
+        context = modules.map { |x| find_class_name(x) }.join("::")
+        [context, find(last)].join("::")
+      elsif subject.respond_to?(:policy_class)
+        subject.policy_class
+      elsif subject.class.respond_to?(:policy_class)
+        subject.class.policy_class
       else
-        klass = if object.is_a?(Array)
-          object.map { |x| find_class_name(x) }.join("::")
-        else
-          find_class_name(object)
-        end
+        klass = find_class_name(subject)
         "#{klass}#{SUFFIX}"
       end
     end

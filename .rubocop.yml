@@ -1,14 +1,22 @@
 AllCops:
+  DisplayCopNames: true
+  TargetRubyVersion: 2.2
   Exclude:
     - "gemfiles/**/*"
     - "vendor/**/*"
     - "lib/generators/**/*"
+
+Metrics/BlockLength:
+  Exclude:
+    - "**/*_spec.rb"
 
 Metrics/MethodLength:
   Max: 40
 
 Metrics/ModuleLength:
   Max: 200
+  Exclude:
+    - "**/*_spec.rb"
 
 Metrics/LineLength:
   Max: 120
@@ -25,7 +33,7 @@ Metrics/PerceivedComplexity:
 Style/StructInheritance:
   Enabled: false
 
-Style/AlignParameters:
+Layout/AlignParameters:
   EnforcedStyle: with_fixed_indentation
 
 Style/StringLiterals:
@@ -34,7 +42,7 @@ Style/StringLiterals:
 Style/StringLiteralsInInterpolation:
   EnforcedStyle: double_quotes
 
-Style/ClosingParenthesisIndentation:
+Layout/ClosingParenthesisIndentation:
   Enabled: false
 
 Style/OneLineConditional:
@@ -49,8 +57,8 @@ Style/Not:
 Documentation:
   Enabled: false # TODO: Enable again once we have more docs
 
-Style/CaseIndentation:
-  IndentWhenRelativeTo: case
+Layout/CaseIndentation:
+  EnforcedStyle: case
   SupportedStyles:
     - case
     - end
@@ -61,22 +69,22 @@ Style/PercentLiteralDelimiters:
     '%w': "[]"
     '%W': "[]"
 
-Style/AccessModifierIndentation:
+Layout/AccessModifierIndentation:
   EnforcedStyle: outdent
 
 Style/SignalException:
   Enabled: false
 
-Style/IndentationWidth:
+Layout/IndentationWidth:
   Enabled: false
 
 Style/TrivialAccessors:
   ExactNameMatch: true
 
-Lint/EndAlignment:
-  AlignWith: variable
+Layout/EndAlignment:
+  EnforcedStyleAlignWith: variable
 
-Lint/DefEndAlignment:
+Layout/DefEndAlignment:
   Enabled: false
 
 Lint/HandleExceptions:
@@ -88,7 +96,7 @@ Style/SpecialGlobalVars:
 Style/TrivialAccessors:
   Enabled: false
 
-Style/IndentHash:
+Layout/IndentHash:
   Enabled: false
 
 Style/DoubleNegation:

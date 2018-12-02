@@ -8,17 +8,23 @@ describe Pundit do
   let(:comment) { Comment.new }
   let(:comment_four_five_six) { CommentFourFiveSix.new }
   let(:article) { Article.new }
-  let(:controller) { Controller.new(user, action: "update") }
+  let(:controller) { Controller.new(user, "update", {}) }
   let(:artificial_blog) { ArtificialBlog.new }
   let(:article_tag) { ArticleTag.new }
   let(:comments_relation) { CommentsRelation.new }
   let(:empty_comments_relation) { CommentsRelation.new(true) }
   let(:tag_four_five_six) { ProjectOneTwoThree::TagFourFiveSix.new(user) }
   let(:avatar_four_five_six) { ProjectOneTwoThree::AvatarFourFiveSix.new }
+  let(:wiki) { Wiki.new }
+  let(:thread) { Thread.new }
 
   describe ".authorize" do
     it "infers the policy and authorizes based on it" do
       expect(Pundit.authorize(user, post, :update?)).to be_truthy
+    end
+
+    it "can be given a different policy class" do
+      expect(Pundit.authorize(user, post, :create?, policy_class: PublicationPolicy)).to be_truthy
     end
 
     it "works with anonymous class policies" do
@@ -35,6 +41,13 @@ describe Pundit do
         expect(error.record).to eq post
         expect(error.policy).to eq Pundit.policy(user, post)
       end
+      # rubocop:enable Style/MultilineBlockChain
+    end
+
+    it "raises an error with a invalid policy constructor" do
+      expect do
+        Pundit.authorize(user, wiki, :update?)
+      end.to raise_error(Pundit::InvalidConstructorError, "Invalid #<WikiPolicy> constructor is called")
     end
   end
 
@@ -44,23 +57,43 @@ describe Pundit do
     end
 
     it "returns an instantiated policy scope given an active model class" do
-      expect(Pundit.policy_scope(user, Comment)).to eq Comment
+      expect(Pundit.policy_scope(user, Comment)).to eq CommentScope.new(Comment)
     end
 
     it "returns an instantiated policy scope given an active record relation" do
-      expect(Pundit.policy_scope(user, comments_relation)).to eq comments_relation
+      expect(Pundit.policy_scope(user, comments_relation)).to eq CommentScope.new(comments_relation)
     end
 
     it "returns an instantiated policy scope given an empty active record relation" do
-      expect(Pundit.policy_scope(user, empty_comments_relation)).to eq empty_comments_relation
+      expect(Pundit.policy_scope(user, empty_comments_relation)).to eq CommentScope.new(empty_comments_relation)
+    end
+
+    it "returns an instantiated policy scope given an array of a symbol and plain model class" do
+      expect(Pundit.policy_scope(user, [:project, Post])).to eq :read
+    end
+
+    it "returns an instantiated policy scope given an array of a symbol and active model class" do
+      expect(Pundit.policy_scope(user, [:project, Comment])).to eq Comment
     end
 
     it "returns nil if the given policy scope can't be found" do
       expect(Pundit.policy_scope(user, Article)).to be_nil
     end
 
-    it "returns nil if blank object given" do
-      expect(Pundit.policy_scope(user, nil)).to be_nil
+    it "raises an exception if nil object given" do
+      expect { Pundit.policy_scope(user, nil) }.to raise_error(Pundit::NotDefinedError)
+    end
+
+    it "raises an error with a invalid policy scope constructor" do
+      expect do
+        Pundit.policy_scope(user, Wiki)
+      end.to raise_error(Pundit::InvalidConstructorError, "Invalid #<WikiPolicy::Scope> constructor is called")
+    end
+
+    it "raises an original error with a policy scope that contains error" do
+      expect do
+        Pundit.policy_scope(user, Thread)
+      end.to raise_error(ArgumentError)
     end
   end
 
@@ -70,7 +103,7 @@ describe Pundit do
     end
 
     it "returns an instantiated policy scope given an active model class" do
-      expect(Pundit.policy_scope!(user, Comment)).to eq Comment
+      expect(Pundit.policy_scope!(user, Comment)).to eq CommentScope.new(Comment)
     end
 
     it "throws an exception if the given policy scope can't be found" do
@@ -84,7 +117,21 @@ describe Pundit do
     it "throws an exception if the given policy scope is nil" do
       expect do
         Pundit.policy_scope!(user, nil)
-      end.to raise_error(Pundit::NotDefinedError, "unable to find policy scope of nil")
+      end.to raise_error(Pundit::NotDefinedError, "Cannot scope NilClass")
+    end
+
+    it "returns an instantiated policy scope given an array of a symbol and plain model class" do
+      expect(Pundit.policy_scope!(user, [:project, Post])).to eq :read
+    end
+
+    it "returns an instantiated policy scope given an array of a symbol and active model class" do
+      expect(Pundit.policy_scope!(user, [:project, Comment])).to eq Comment
+    end
+
+    it "raises an error with a invalid policy scope constructor" do
+      expect do
+        Pundit.policy_scope(user, Wiki)
+      end.to raise_error(Pundit::InvalidConstructorError, "Invalid #<WikiPolicy::Scope> constructor is called")
     end
   end
 
@@ -121,42 +168,62 @@ describe Pundit do
     end
 
     it "returns an instantiated policy given an array of symbols" do
-      policy = Pundit.policy(user, [:project, :criteria])
+      policy = Pundit.policy(user, %i[project criteria])
       expect(policy.class).to eq Project::CriteriaPolicy
       expect(policy.user).to eq user
-      expect(policy.criteria).to eq [:project, :criteria]
+      expect(policy.criteria).to eq :criteria
     end
 
     it "returns an instantiated policy given an array of a symbol and plain model instance" do
       policy = Pundit.policy(user, [:project, post])
       expect(policy.class).to eq Project::PostPolicy
       expect(policy.user).to eq user
-      expect(policy.post).to eq [:project, post]
+      expect(policy.post).to eq post
+    end
+
+    it "returns an instantiated policy given an array of a symbol and a model instance with policy_class override" do
+      policy = Pundit.policy(user, [:project, customer_post])
+      expect(policy.class).to eq Project::PostPolicy
+      expect(policy.user).to eq user
+      expect(policy.post).to eq customer_post
     end
 
     it "returns an instantiated policy given an array of a symbol and an active model instance" do
       policy = Pundit.policy(user, [:project, comment])
       expect(policy.class).to eq Project::CommentPolicy
       expect(policy.user).to eq user
-      expect(policy.post).to eq [:project, comment]
+      expect(policy.comment).to eq comment
     end
 
     it "returns an instantiated policy given an array of a symbol and a plain model class" do
       policy = Pundit.policy(user, [:project, Post])
       expect(policy.class).to eq Project::PostPolicy
       expect(policy.user).to eq user
-      expect(policy.post).to eq [:project, Post]
+      expect(policy.post).to eq Post
+    end
+
+    it "raises an error with a invalid policy constructor" do
+      expect do
+        Pundit.policy(user, Wiki)
+      end.to raise_error(Pundit::InvalidConstructorError, "Invalid #<WikiPolicy> constructor is called")
     end
 
     it "returns an instantiated policy given an array of a symbol and an active model class" do
       policy = Pundit.policy(user, [:project, Comment])
       expect(policy.class).to eq Project::CommentPolicy
       expect(policy.user).to eq user
-      expect(policy.post).to eq [:project, Comment]
+      expect(policy.comment).to eq Comment
+    end
+
+    it "returns an instantiated policy given an array of a symbol and a class with policy_class override" do
+      policy = Pundit.policy(user, [:project, Customer::Post])
+      expect(policy.class).to eq Project::PostPolicy
+      expect(policy.user).to eq user
+      expect(policy.post).to eq Customer::Post
     end
 
     it "returns correct policy class for an array of a multi-word symbols" do
-      policy = Pundit.policy(user, [:project_one_two_three, :criteria_four_five_six])
+      policy = Pundit.policy(user, %i[project_one_two_three criteria_four_five_six])
       expect(policy.class).to eq ProjectOneTwoThree::CriteriaFourFiveSixPolicy
     end
 
@@ -205,8 +272,8 @@ describe Pundit do
       expect(Pundit.policy(user, Article)).to be_nil
     end
 
-    it "returns nil if the given policy is nil" do
-      expect(Pundit.policy(user, nil)).to be_nil
+    it "returns the specified NilClassPolicy for nil" do
+      expect(Pundit.policy(user, nil)).to be_a NilClassPolicy
     end
 
     describe "with .policy_class set on the model" do
@@ -269,10 +336,10 @@ describe Pundit do
     end
 
     it "returns an instantiated policy given an array of symbols" do
-      policy = Pundit.policy!(user, [:project, :criteria])
+      policy = Pundit.policy!(user, %i[project criteria])
       expect(policy.class).to eq Project::CriteriaPolicy
       expect(policy.user).to eq user
-      expect(policy.criteria).to eq [:project, :criteria]
+      expect(policy.criteria).to eq :criteria
     end
 
     it "throws an exception if the given policy can't be found" do
@@ -280,8 +347,14 @@ describe Pundit do
       expect { Pundit.policy!(user, Article) }.to raise_error(Pundit::NotDefinedError)
     end
 
-    it "throws an exception if the given policy is nil" do
-      expect { Pundit.policy!(user, nil) }.to raise_error(Pundit::NotDefinedError, "unable to find policy of nil")
+    it "returns the specified NilClassPolicy for nil" do
+      expect(Pundit.policy!(user, nil)).to be_a NilClassPolicy
+    end
+
+    it "raises an error with a invalid policy constructor" do
+      expect do
+        Pundit.policy(user, Wiki)
+      end.to raise_error(Pundit::InvalidConstructorError, "Invalid #<WikiPolicy> constructor is called")
     end
   end
 
@@ -343,6 +416,10 @@ describe Pundit do
       expect { controller.authorize(post, :destroy?) }.to raise_error(Pundit::NotAuthorizedError)
     end
 
+    it "can be given a different policy class" do
+      expect(controller.authorize(post, :create?, policy_class: PublicationPolicy)).to be_truthy
+    end
+
     it "works with anonymous class policies" do
       expect(controller.authorize(article_tag, :show?)).to be_truthy
       expect { controller.authorize(article_tag, :destroy?) }.to raise_error(Pundit::NotAuthorizedError)
@@ -363,7 +440,11 @@ describe Pundit do
     end
 
     it "raises an error when the given record is nil" do
-      expect { controller.authorize(nil, :destroy?) }.to raise_error(Pundit::NotDefinedError)
+      expect { controller.authorize(nil, :destroy?) }.to raise_error(Pundit::NotAuthorizedError)
+    end
+
+    it "raises an error with a invalid policy constructor" do
+      expect { controller.authorize(wiki, :destroy?) }.to raise_error(Pundit::InvalidConstructorError)
     end
   end
 
@@ -398,6 +479,10 @@ describe Pundit do
       expect { controller.policy(article) }.to raise_error(Pundit::NotDefinedError)
     end
 
+    it "raises an error with a invalid policy constructor" do
+      expect { controller.policy(wiki) }.to raise_error(Pundit::InvalidConstructorError)
+    end
+
     it "allows policy to be injected" do
       new_policy = OpenStruct.new
       controller.policies[post] = new_policy
@@ -411,8 +496,16 @@ describe Pundit do
       expect(controller.policy_scope(Post)).to eq :published
     end
 
+    it "allows policy scope class to be overriden" do
+      expect(controller.policy_scope(Post, policy_scope_class: PublicationPolicy::Scope)).to eq :published
+    end
+
     it "throws an exception if the given policy can't be found" do
       expect { controller.policy_scope(Article) }.to raise_error(Pundit::NotDefinedError)
+    end
+
+    it "raises an error with a invalid policy scope constructor" do
+      expect { controller.policy_scope(Wiki) }.to raise_error(Pundit::InvalidConstructorError)
     end
 
     it "allows policy_scope to be injected" do
@@ -425,49 +518,63 @@ describe Pundit do
 
   describe "#permitted_attributes" do
     it "checks policy for permitted attributes" do
-      params = ActionController::Parameters.new(action: "update", post: {
+      params = ActionController::Parameters.new(post: {
         title: "Hello",
         votes: 5,
         admin: true
       })
 
-      expect(Controller.new(user, params).permitted_attributes(post)).to eq("title" => "Hello", "votes" => 5)
-      expect(Controller.new(double, params).permitted_attributes(post)).to eq("votes" => 5)
+      action = "update"
+
+      expect(Controller.new(user, action, params).permitted_attributes(post).to_h).to eq(
+        "title" => "Hello",
+        "votes" => 5
+      )
+      expect(Controller.new(double, action, params).permitted_attributes(post).to_h).to eq("votes" => 5)
     end
 
     it "checks policy for permitted attributes for record of a ActiveModel type" do
-      params = ActionController::Parameters.new(action: "update", customer_post: {
+      params = ActionController::Parameters.new(customer_post: {
         title: "Hello",
         votes: 5,
         admin: true
       })
 
-      expect(Controller.new(user, params).permitted_attributes(customer_post)).to eq("title" => "Hello", "votes" => 5)
-      expect(Controller.new(double, params).permitted_attributes(customer_post)).to eq("votes" => 5)
+      action = "update"
+
+      expect(Controller.new(user, action, params).permitted_attributes(customer_post).to_h).to eq(
+        "title" => "Hello",
+        "votes" => 5
+      )
+      expect(Controller.new(double, action, params).permitted_attributes(customer_post).to_h).to eq(
+        "votes" => 5
+      )
     end
   end
 
   describe "#permitted_attributes_for_action" do
     it "is checked if it is defined in the policy" do
-      params = ActionController::Parameters.new(action: "revise", post: {
+      params = ActionController::Parameters.new(post: {
         title: "Hello",
         body: "blah",
         votes: 5,
         admin: true
       })
 
-      expect(Controller.new(user, params).permitted_attributes(post)).to eq("body" => "blah")
+      action = "revise"
+      expect(Controller.new(user, action, params).permitted_attributes(post).to_h).to eq("body" => "blah")
     end
 
     it "can be explicitly set" do
-      params = ActionController::Parameters.new(action: "update", post: {
+      params = ActionController::Parameters.new(post: {
         title: "Hello",
         body: "blah",
         votes: 5,
         admin: true
       })
 
-      expect(Controller.new(user, params).permitted_attributes(post, :revise)).to eq("body" => "blah")
+      action = "update"
+      expect(Controller.new(user, action, params).permitted_attributes(post, :revise).to_h).to eq("body" => "blah")
     end
   end
 
